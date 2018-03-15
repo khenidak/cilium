@@ -370,7 +370,7 @@ func (f *GCFilter) doFiltering(dstIP net.IP, dstPort uint16, nextHdr, flags uint
 
 		// Check if the src_sec_id of that entry is still allowed
 		// to talk with the destination IP.
-		if filterRuleCtx, ok := f.IDsToKeep[identity.NumericIdentity(entry.src_sec_id)]; !ok {
+		if l4L7Metadata, ok := f.IDsToKeep[identity.NumericIdentity(entry.src_sec_id)]; !ok {
 			action = deleteEntry
 		} else {
 			l4RuleCtx := policy.L4Metadata{
@@ -378,7 +378,7 @@ func (f *GCFilter) doFiltering(dstIP net.IP, dstPort uint16, nextHdr, flags uint
 				Proto: nextHdr,
 			}
 
-			if filterRuleCtx.IsL3Only() {
+			if l4L7Metadata.IsL3Only() {
 				// If the rule is L3-only then check if it's allowed by
 				// L4-only rules.
 				if l4OnlyRules, ok := f.IDsToKeep[identity.InvalidIdentity]; ok {
@@ -390,7 +390,7 @@ func (f *GCFilter) doFiltering(dstIP net.IP, dstPort uint16, nextHdr, flags uint
 			} else {
 				// If the rule is not L3-only then check if it's allowed by
 				// L3-L4 rules.
-				if l7Rule, ok := filterRuleCtx[l4RuleCtx]; ok {
+				if l7Rule, ok := l4L7Metadata[l4RuleCtx]; ok {
 					if l7Rule.L4Installed && entry.proxy_port != l7Rule.RedirectPort {
 						action = modifyEntry
 						entry.proxy_port = l7Rule.RedirectPort
@@ -412,19 +412,19 @@ func (f *GCFilter) doFiltering(dstIP net.IP, dstPort uint16, nextHdr, flags uint
 
 		// Check if the src_sec_id of that entry needs to be modified
 		// by the given filter.
-		if filterRuleCtx, ok := f.IDsToMod[identity.NumericIdentity(entry.src_sec_id)]; ok {
-			ruleCtx := policy.L4Metadata{
+		if l4L7Metadata, ok := f.IDsToMod[identity.NumericIdentity(entry.src_sec_id)]; ok {
+			l4Metadata := policy.L4Metadata{
 				Port:  dstPort,
 				Proto: nextHdr,
 			}
 
-			if filterRuleCtx.IsL3Only() {
+			if l4L7Metadata.IsL3Only() {
 				// If the rule is L3-only then check if it's allowed by
 				// L4-only rules.
 				if l4OnlyRules, ok := f.IDsToMod[identity.InvalidIdentity]; ok {
-					if l7RuleCtx, ok := l4OnlyRules[ruleCtx]; ok {
-						if l7RuleCtx.L4Installed &&
-							l7RuleCtx.IsRedirect() &&
+					if l7Metadata, ok := l4OnlyRules[l4Metadata]; ok {
+						if l7Metadata.L4Installed &&
+							l7Metadata.IsRedirect() &&
 							entry.proxy_port != 0 {
 
 							entry.proxy_port = 0
@@ -435,9 +435,9 @@ func (f *GCFilter) doFiltering(dstIP net.IP, dstPort uint16, nextHdr, flags uint
 			} else {
 				// If the rule is not L3-only then check if it's allowed by
 				// L3-L4 rules.
-				if l7RuleCtx, ok := filterRuleCtx[ruleCtx]; ok {
-					if l7RuleCtx.L4Installed &&
-						l7RuleCtx.IsRedirect() &&
+				if l7Metadata, ok := l4L7Metadata[l4Metadata]; ok {
+					if l7Metadata.L4Installed &&
+						l7Metadata.IsRedirect() &&
 						entry.proxy_port != 0 {
 
 						entry.proxy_port = 0
