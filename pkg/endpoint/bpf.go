@@ -690,18 +690,18 @@ func (e *Endpoint) regenerateBPF(owner Owner, epdir, reason string) (uint64, err
 
 			newSecIDCtxs := policy.NewSecurityIDContexts()
 			p := *c.L3L4Policy
-			for identity, l4RuleContexts := range p {
+			for securityIdentity, l4L7Map := range p {
 
-				for l4RuleContext, l7RuleContexts := range l4RuleContexts {
-					pp := l4RuleContext.PortProto()
+				for l4Metadata, l7Metadata := range l4L7Map {
+					pp := l4Metadata.PortProto()
 					l4Filter, ok := c.L4Policy.Ingress[pp]
 
 					if ok {
-						l7RuleContexts.RedirectPort = e.lookupRedirectPortBE(&l4Filter)
-						if _, ok := newSecIDCtxs[identity]; !ok {
-							newSecIDCtxs[identity] = policy.NewL4L7Map()
+						l7Metadata.RedirectPort = e.lookupRedirectPortBE(&l4Filter)
+						if _, ok := newSecIDCtxs[securityIdentity]; !ok {
+							newSecIDCtxs[securityIdentity] = policy.NewL4L7Map()
 						}
-						newSecIDCtxs[identity][l4RuleContext] = l7RuleContexts
+						newSecIDCtxs[securityIdentity][l4Metadata] = l7Metadata
 						policyChanged = true
 					}
 				}
