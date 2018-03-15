@@ -40,11 +40,11 @@ func NewSecurityIDContexts() SecurityIDContexts {
 }
 
 // L4RuleContexts maps a rule context to a L7RuleContext.
-type L4RuleContexts map[L4RuleContext]L7RuleContext
+type L4RuleContexts map[L4Rule]L7RuleContext
 
 // NewL4RuleContexts returns a new L4RuleContexts.
 func NewL4RuleContexts() L4RuleContexts {
-	return L4RuleContexts(make(map[L4RuleContext]L7RuleContext))
+	return L4RuleContexts(make(map[L4Rule]L7RuleContext))
 }
 
 // DeepCopy returns a deep copy of L4RuleContexts
@@ -62,9 +62,10 @@ func (rc L4RuleContexts) IsL3Only() bool {
 	return rc != nil && len(rc) == 0
 }
 
-// L4RuleContext represents a L4 rule
-// Don't use pointers here since this structure is used as key on maps.
-type L4RuleContext struct {
+// L4Rule represents an L4 rule (port and protocol tuple).
+// Do not use pointers for fields in this type since this structure is used as
+// a key for maps.
+type L4Rule struct {
 	// Port is the destination port in the policy in network byte order
 	Port uint16
 	// Proto is the protocol ID used
@@ -86,7 +87,7 @@ func (rc L7RuleContext) IsRedirect() bool {
 
 // PortProto returns the port proto tuple in a human readable format. i.e.
 // with its port in host byte order.
-func (rc L4RuleContext) PortProto() string {
+func (rc L4Rule) PortProto() string {
 	proto := u8proto.U8proto(rc.Proto).String()
 	port := strconv.Itoa(int(byteorder.NetworkToHost(uint16(rc.Port)).(uint16)))
 	return port + "/" + proto

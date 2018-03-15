@@ -373,7 +373,7 @@ func (f *GCFilter) doFiltering(dstIP net.IP, dstPort uint16, nextHdr, flags uint
 		if filterRuleCtx, ok := f.IDsToKeep[identity.NumericIdentity(entry.src_sec_id)]; !ok {
 			action = deleteEntry
 		} else {
-			l4RuleCtx := policy.L4RuleContext{
+			l4RuleCtx := policy.L4Rule{
 				Port:  dstPort,
 				Proto: nextHdr,
 			}
@@ -413,7 +413,7 @@ func (f *GCFilter) doFiltering(dstIP net.IP, dstPort uint16, nextHdr, flags uint
 		// Check if the src_sec_id of that entry needs to be modified
 		// by the given filter.
 		if filterRuleCtx, ok := f.IDsToMod[identity.NumericIdentity(entry.src_sec_id)]; ok {
-			ruleCtx := policy.L4RuleContext{
+			ruleCtx := policy.L4Rule{
 				Port:  dstPort,
 				Proto: nextHdr,
 			}
