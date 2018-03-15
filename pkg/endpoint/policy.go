@@ -139,9 +139,9 @@ func getL4FilterEndpointSelector(filter *policy.L4Filter) []api.EndpointSelector
 // Returns a map that represents all policies that were attempted to be removed;
 // it maps to whether they were removed successfully (true or false)
 func (e *Endpoint) removeOldFilter(owner Owner, labelsMap *identityPkg.IdentityCache,
-	filter *policy.L4Filter, direction policymap.TrafficDirection) policy.SecurityIDContexts {
+	filter *policy.L4Filter, direction policymap.TrafficDirection) policy.SecurityIdentityL4L7Map {
 
-	attemptedRemovedPolicies := policy.NewSecurityIDContexts()
+	attemptedRemovedPolicies := policy.NewSecurityIdentityL4L7Map()
 	port := uint16(filter.Port)
 	proto := uint8(filter.U8Proto)
 
@@ -185,9 +185,9 @@ func (e *Endpoint) removeOldFilter(owner Owner, labelsMap *identityPkg.IdentityC
 // policy.
 // Applies for L3 dependent L4 not for L4-only.
 func (e *Endpoint) applyNewFilter(owner Owner, labelsMap *identityPkg.IdentityCache,
-	filter *policy.L4Filter, direction policymap.TrafficDirection) (policy.SecurityIDContexts, int) {
+	filter *policy.L4Filter, direction policymap.TrafficDirection) (policy.SecurityIdentityL4L7Map, int) {
 
-	addedPolicies := policy.NewSecurityIDContexts()
+	addedPolicies := policy.NewSecurityIdentityL4L7Map()
 	port := uint16(filter.Port)
 	proto := uint8(filter.U8Proto)
 
@@ -228,7 +228,7 @@ func (e *Endpoint) applyNewFilter(owner Owner, labelsMap *identityPkg.IdentityCa
 //    key and the value is true OR
 //  - The previous assigned value and the new value are both
 //    true
-func setMapOperationResult(secIDs, newSecIDs policy.SecurityIDContexts) {
+func setMapOperationResult(secIDs, newSecIDs policy.SecurityIdentityL4L7Map) {
 	for identity, ruleContexts := range newSecIDs {
 		for ruleContext, v := range ruleContexts {
 			if _, ok := secIDs[identity]; !ok {
@@ -249,10 +249,10 @@ func setMapOperationResult(secIDs, newSecIDs policy.SecurityIDContexts) {
 // to be removed;
 // it maps to whether they were removed successfully (true or false)
 func (e *Endpoint) applyL4PolicyLocked(owner Owner, labelsMap *identityPkg.IdentityCache,
-	oldPolicy, newPolicy *policy.L4Policy, direction policymap.TrafficDirection) (secIDsAdd, secIDsRm policy.SecurityIDContexts, err error) {
+	oldPolicy, newPolicy *policy.L4Policy, direction policymap.TrafficDirection) (secIDsAdd, secIDsRm policy.SecurityIdentityL4L7Map, err error) {
 
-	secIDsAdd = policy.NewSecurityIDContexts()
-	secIDsRm = policy.NewSecurityIDContexts()
+	secIDsAdd = policy.NewSecurityIdentityL4L7Map()
+	secIDsRm = policy.NewSecurityIdentityL4L7Map()
 
 	var oldL4PolicyMap policy.L4PolicyMap
 	var newL4PolicyMap policy.L4PolicyMap
@@ -267,7 +267,7 @@ func (e *Endpoint) applyL4PolicyLocked(owner Owner, labelsMap *identityPkg.Ident
 	}
 
 	if oldPolicy != nil {
-		var secIDs policy.SecurityIDContexts
+		var secIDs policy.SecurityIdentityL4L7Map
 		for _, filter := range oldL4PolicyMap {
 			secIDs = e.removeOldFilter(owner, labelsMap, &filter, direction)
 			setMapOperationResult(secIDsRm, secIDs)
@@ -280,7 +280,7 @@ func (e *Endpoint) applyL4PolicyLocked(owner Owner, labelsMap *identityPkg.Ident
 
 	var (
 		errors, errs  = 0, 0
-		ingressSecIDs policy.SecurityIDContexts
+		ingressSecIDs policy.SecurityIdentityL4L7Map
 	)
 	for _, filter := range newL4PolicyMap {
 		ingressSecIDs, errs = e.applyNewFilter(owner, labelsMap, &filter, direction)
@@ -353,11 +353,11 @@ func (e *Endpoint) resolveL4Policy(owner Owner, repo *policy.Repository, c *poli
 // and a map matching which rules were successfully removed.
 // Must be called with Consumable mutex held.
 func (e *Endpoint) regenerateConsumable(owner Owner, labelsMap *identityPkg.IdentityCache,
-	repo *policy.Repository, c *policy.Consumable) (changed bool, ingressRulesAdd, ingressRulesRm policy.SecurityIDContexts, err error) {
+	repo *policy.Repository, c *policy.Consumable) (changed bool, ingressRulesAdd, ingressRulesRm policy.SecurityIdentityL4L7Map, err error) {
 
 	var (
-		ingressL4ToRemove policy.SecurityIDContexts
-		egressL4ToRemove  policy.SecurityIDContexts
+		ingressL4ToRemove policy.SecurityIdentityL4L7Map
+		egressL4ToRemove  policy.SecurityIdentityL4L7Map
 	)
 
 	// Mark all entries unused by denying them
@@ -370,11 +370,11 @@ func (e *Endpoint) regenerateConsumable(owner Owner, labelsMap *identityPkg.Iden
 		c.EgressIdentities[egressIdentity] = false
 	}
 
-	ingressRulesAdd = policy.NewSecurityIDContexts()
-	ingressRulesRm = policy.NewSecurityIDContexts()
+	ingressRulesAdd = policy.NewSecurityIdentityL4L7Map()
+	ingressRulesRm = policy.NewSecurityIdentityL4L7Map()
 
-	egressRulesAdd := policy.NewSecurityIDContexts()
-	egressRulesRm := policy.NewSecurityIDContexts()
+	egressRulesAdd := policy.NewSecurityIdentityL4L7Map()
+	egressRulesRm := policy.NewSecurityIdentityL4L7Map()
 
 	// L4 policy needs to be applied on two conditions
 	// 1. The L4 policy has changed
@@ -713,13 +713,13 @@ func (e *Endpoint) updateNetworkPolicy(owner Owner) error {
 //
 // Returns:
 //  - changed: true if the policy was changed for this endpoint;
-//  - l4PolicyMapAdded: map of SecurityIDContexts that contains a map of rule
+//  - l4PolicyMapAdded: map of SecurityIdentityL4L7Map that contains a map of rule
 // 					  contexts that were added to the L4 policy map;
-//  - l4PolicyMapRemoved: map of SecurityIDContexts that contains a map of rule
+//  - l4PolicyMapRemoved: map of SecurityIdentityL4L7Map that contains a map of rule
 // 					    contexts that were removed from the L4 policy map;
 //  - err: error in case of an error.
 // Must be called with endpoint mutex held.
-func (e *Endpoint) regeneratePolicy(owner Owner, opts models.ConfigurationMap) (needToRegenerateBPF bool, l4PolicyMapAdded policy.SecurityIDContexts, l4PolicyMapRemoved policy.SecurityIDContexts, err error) {
+func (e *Endpoint) regeneratePolicy(owner Owner, opts models.ConfigurationMap) (needToRegenerateBPF bool, l4PolicyMapAdded policy.SecurityIdentityL4L7Map, l4PolicyMapRemoved policy.SecurityIdentityL4L7Map, err error) {
 	// Dry mode does not regenerate policy via bpf regeneration, so we let it pass
 	// through. Some bpf/redirect updates are skipped in that case.
 	//

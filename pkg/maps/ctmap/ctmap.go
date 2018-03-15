@@ -123,8 +123,8 @@ type GCFilterFlags uint
 type GCFilter struct {
 	Time      uint32
 	IP        net.IP
-	IDsToMod  policy.SecurityIDContexts
-	IDsToKeep policy.SecurityIDContexts
+	IDsToMod  policy.SecurityIdentityL4L7Map
+	IDsToKeep policy.SecurityIdentityL4L7Map
 	Type      GCFilterFlags
 }
 
@@ -132,8 +132,8 @@ type GCFilter struct {
 func NewGCFilterBy(f GCFilterFlags) *GCFilter {
 	return &GCFilter{
 		Type:      f,
-		IDsToMod:  policy.NewSecurityIDContexts(),
-		IDsToKeep: policy.NewSecurityIDContexts(),
+		IDsToMod:  policy.NewSecurityIdentityL4L7Map(),
+		IDsToKeep: policy.NewSecurityIdentityL4L7Map(),
 	}
 }
 
