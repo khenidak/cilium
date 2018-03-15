@@ -693,7 +693,7 @@ func (e *Endpoint) regenerateBPF(owner Owner, epdir, reason string) (uint64, err
 			for securityIdentity, l4L7Map := range p {
 
 				for l4Metadata, l7Metadata := range l4L7Map {
-					pp := l4Metadata.PortProto()
+					pp := l4Metadata.String()
 					l4Filter, ok := c.L4Policy.Ingress[pp]
 
 					if ok {

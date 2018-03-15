@@ -89,9 +89,9 @@ func (rc L7Rule) IsRedirect() bool {
 	return rc.RedirectPort != 0
 }
 
-// PortProto returns the port proto tuple in a human readable format. i.e.
-// with its port in host byte order.
-func (rc L4Rule) PortProto() string {
+// String returns the port-protocol tuple in a human readable format, i.e.
+// with its port in host-byte order.
+func (rc L4Rule) String() string {
 	proto := u8proto.U8proto(rc.Proto).String()
 	port := strconv.Itoa(int(byteorder.NetworkToHost(uint16(rc.Port)).(uint16)))
 	return port + "/" + proto
