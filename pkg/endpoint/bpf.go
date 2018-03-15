@@ -699,7 +699,7 @@ func (e *Endpoint) regenerateBPF(owner Owner, epdir, reason string) (uint64, err
 					if ok {
 						l7RuleContexts.RedirectPort = e.lookupRedirectPortBE(&l4Filter)
 						if _, ok := newSecIDCtxs[identity]; !ok {
-							newSecIDCtxs[identity] = policy.NewL4RuleContexts()
+							newSecIDCtxs[identity] = policy.NewL4L7Map()
 						}
 						newSecIDCtxs[identity][l4RuleContext] = l7RuleContexts
 						policyChanged = true
