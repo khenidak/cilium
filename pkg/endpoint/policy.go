@@ -199,7 +199,7 @@ func (e *Endpoint) removeOldL4Filter(labelsMap *identityPkg.IdentityCache,
 // It also returns the number of errors that occurred while when applying the
 // policy.
 // Applies for L3 dependent L4 not for L4-only.
-func (e *Endpoint) applyNewFilter(owner Owner, labelsMap *identityPkg.IdentityCache,
+func (e *Endpoint) applyNewFilter(labelsMap *identityPkg.IdentityCache,
 	filter *policy.L4Filter, direction policymap.TrafficDirection) (policy.SecurityIdentityL4L7Map, int) {
 
 	attemptedAddedMapEntries := policy.NewSecurityIdentityL4L7Map()
@@ -297,7 +297,7 @@ func (e *Endpoint) applyL4PolicyLocked(owner Owner, labelsMap *identityPkg.Ident
 
 	// Add new filters.
 	for _, filter := range newL4PolicyMap {
-		attemptedAddedPolicyMapEntries, errs := e.applyNewFilter(owner, labelsMap, &filter, direction)
+		attemptedAddedPolicyMapEntries, errs := e.applyNewFilter(labelsMap, &filter, direction)
 		setMapOperationResult(allAddedEntries, attemptedAddedPolicyMapEntries)
 		errors += errs
 	}
