@@ -262,7 +262,7 @@ func setMapOperationResult(secIDs, newSecIDs policy.SecurityIdentityL4L7Map) {
 // to be added;
 // and a map that represents all L3-dependent L4 rules that were attempted
 // to be removed.
-func (e *Endpoint) applyL4PolicyLocked(owner Owner, labelsMap *identityPkg.IdentityCache,
+func (e *Endpoint) applyL4PolicyLocked(labelsMap *identityPkg.IdentityCache,
 	oldPolicy, newPolicy *policy.L4Policy, direction policymap.TrafficDirection) (allAddedEntries, allRemovedEntries policy.SecurityIdentityL4L7Map, err error) {
 
 	allAddedEntries = policy.NewSecurityIdentityL4L7Map()
@@ -407,14 +407,14 @@ func (e *Endpoint) regenerateConsumable(owner Owner, labelsMap *identityPkg.Iden
 		// PolicyMap can't be created in dry mode.
 		if !owner.DryModeEnabled() {
 			// Collect unused redirects.
-			ingressRulesAdd, ingressL4ToRemove, err = e.applyL4PolicyLocked(owner, labelsMap, e.L4Policy, c.L4Policy, policymap.Ingress)
+			ingressRulesAdd, ingressL4ToRemove, err = e.applyL4PolicyLocked(labelsMap, e.L4Policy, c.L4Policy, policymap.Ingress)
 			if err != nil {
 				// This should not happen, and we can't fail at this stage anyway.
 				e.getLogger().WithError(err).Fatal("Ingress L4 Policy application failed")
 			}
 
 			// Collect unused redirects.
-			egressRulesAdd, egressL4ToRemove, err = e.applyL4PolicyLocked(owner, labelsMap, e.L4Policy, c.L4Policy, policymap.Egress)
+			egressRulesAdd, egressL4ToRemove, err = e.applyL4PolicyLocked(labelsMap, e.L4Policy, c.L4Policy, policymap.Egress)
 			if err != nil {
 				// This should not happen, and we can't fail at this stage anyway.
 				e.getLogger().WithError(err).Error("Ingress L4 Policy application failed")
