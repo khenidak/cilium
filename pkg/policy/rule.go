@@ -191,17 +191,10 @@ func mergeL4(ctx *SearchContext, dir string, fromEndpoints *v3.IdentitySelector,
 		}
 	}
 
-	l3match := false
-	if ctx.From != nil && fromEndpoints != nil {
-		if fromEndpoints.Matches(ctx.From) {
-			l3match = true
-			// FIXME FIXME FIXME
-			return found, nil
-		}
-		if l3match == false {
+	if ctx.From != nil {
+		if !fromEndpoints.Matches(ctx.From) {
 			ctx.PolicyTrace("      Labels %s not found", ctx.From)
-			// FIXME FIXME FIXME
-			return found, nil
+			return 0, nil
 		}
 	}
 	ctx.PolicyTrace("      Found all required labels")
@@ -273,7 +266,6 @@ func (r *rule) resolveL4Policy(ctx *SearchContext, state *traceState, result *L4
 			ctx.PolicyTrace("    No L4 rules\n")
 		}
 		for _, egressRule := range r.Egress {
-			// FIXME FIXME FIXME why no toEndpoints Selector?
 			if egressRule.ToIdentities != nil {
 				cnt, err := mergeL4(ctx, "Egress", nil, egressRule.ToIdentities.ToPorts,
 					r.Rule.Labels.DeepCopy(), result.Egress)
@@ -312,8 +304,15 @@ func mergeCIDR(ctx *SearchContext, dir string, ipRules []v3.CIDR, ruleLabels lab
 func computeResultantCIDRSet(cidrs *v3.CIDRRule) []v3.CIDR {
 	var allResultantAllowedCIDRs []v3.CIDR
 	for _, c := range cidrs.CIDR {
-		// No need for error checking, as v3.CIDRRule.Sanitize() already does.
-		_, allowNet, _ := net.ParseCIDR(string(c))
+		_, allowNet, err := net.ParseCIDR(string(c))
+		if err != nil {
+			// we are trying to parse an IP "x.y.z.w" instead of "x.y.z.w/b"
+			ip := net.ParseIP(string(c))
+			if ip == nil {
+				continue
+			}
+			allowNet = &net.IPNet{IP: ip, Mask: net.CIDRMask(128, 128)}
+		}
 
 		var removeSubnets []*net.IPNet
 		for _, t := range cidrs.ExceptCIDRs {
@@ -350,7 +349,9 @@ func (r *rule) resolveCIDRPolicy(ctx *SearchContext, state *traceState, result *
 	for _, ingressRule := range r.Ingress {
 		// TODO (ianvernon): GH-1658
 		var allCIDRs []v3.CIDR
-		allCIDRs = append(allCIDRs, computeResultantCIDRSet(ingressRule.FromCIDRs)...)
+		if ingressRule.FromCIDRs != nil {
+			allCIDRs = append(allCIDRs, computeResultantCIDRSet(ingressRule.FromCIDRs)...)
+		}
 
 		if ingressRule.FromEntities != nil {
 			for _, fromEntity := range ingressRule.FromEntities.Entities {
@@ -369,7 +370,9 @@ func (r *rule) resolveCIDRPolicy(ctx *SearchContext, state *traceState, result *
 	for _, egressRule := range r.Egress {
 		// TODO(ianvernon): GH-1658
 		var allCIDRs []v3.CIDR
-		allCIDRs = append(allCIDRs, computeResultantCIDRSet(egressRule.ToCIDRs)...)
+		if egressRule.ToCIDRs != nil {
+			allCIDRs = append(allCIDRs, computeResultantCIDRSet(egressRule.ToCIDRs)...)
+		}
 
 		if egressRule.ToEntities != nil {
 			for _, toEntity := range egressRule.ToEntities.Entities {
@@ -426,27 +429,40 @@ func (r *rule) canReachIngress(ctx *SearchContext, state *traceState) v3.Decisio
 			ctx.PolicyTrace("    Allows from labels %+v", sel)
 			if sel.Matches(ctx.From) {
 				ctx.PolicyTrace("      Found all required labels")
-				if r.FromIdentities.ToPorts != nil {
-					if len(r.FromIdentities.ToPorts.Ports) == 0 {
-						ctx.PolicyTrace("+       No L4 restrictions\n")
-						state.matchedRules++
-						return v3.Allowed
-					}
+				if r.FromIdentities.ToPorts.IsWildcard() {
+					// FIXME this does not respect protocol yet.
+					ctx.PolicyTrace("+       No L4 restrictions\n")
+					state.matchedRules++
+					return v3.Allowed
 				}
 				ctx.PolicyTrace("        Rule restricts traffic to specific L4 destinations; deferring policy decision to L4 policy stage\n")
 			} else {
 				ctx.PolicyTrace("      Labels %v not found\n", ctx.From)
 			}
 		}
-	}
 
-	for _, entitySelector := range r.fromEntities {
-		if entitySelector.Matches(ctx.From) {
-			ctx.PolicyTrace("+     Found all required labels to match entity %s\n", entitySelector.String())
-			state.matchedRules++
-			return v3.Allowed
+		if r.FromEntities != nil {
+			for _, entity := range r.FromEntities.Entities {
+				sel, ok := v3.EntitySelectorMapping[entity]
+				if !ok {
+					log.Warningf("Ignoring entity %s while checking if rules can reach since it is unknown", entity)
+					continue
+				}
+				ctx.PolicyTrace("    Allows from labels %+v", sel)
+				if sel.Matches(ctx.From) {
+					ctx.PolicyTrace("      Found all required labels")
+					if r.FromEntities.ToPorts.IsWildcard() {
+						// FIXME this does not respect protocol yet.
+						ctx.PolicyTrace("+       No L4 restrictions\n")
+						state.matchedRules++
+						return v3.Allowed
+					}
+					ctx.PolicyTrace("        Rule restricts traffic to specific L4 destinations; deferring policy decision to L4 policy stage\n")
+				} else {
+					ctx.PolicyTrace("      Labels %v not found\n", ctx.From)
+				}
+			}
 		}
-
 	}
 
 	return v3.Undecided
@@ -465,7 +481,7 @@ func (r *rule) canReachEgress(ctx *SearchContext, state *traceState) v3.Decision
 	state.selectRule(ctx, r)
 
 	for _, r := range r.Egress {
-		if r.ToRequires == nil {
+		if r.ToRequires != nil {
 			for _, sel := range r.ToRequires.IdentitySelector {
 				ctx.PolicyTrace("    Requires from labels %+v", sel)
 				if !sel.Matches(ctx.To) {
@@ -481,28 +497,43 @@ func (r *rule) canReachEgress(ctx *SearchContext, state *traceState) v3.Decision
 	// Separate loop is needed as failure to meet ToRequires always takes
 	// precedence over ToEndpoints.
 	for _, r := range r.Egress {
-		sel := r.ToIdentities.IdentitySelector
-		ctx.PolicyTrace("    Allows to labels %+v", sel)
-		if sel.Matches(ctx.To) {
-			ctx.PolicyTrace("      Found all required labels")
-			if r.ToIdentities.ToPorts != nil {
-				if len(r.ToIdentities.ToPorts.Ports) == 0 {
+		if r.ToIdentities != nil {
+			sel := r.ToIdentities.IdentitySelector
+			ctx.PolicyTrace("    Allows to labels %+v", sel)
+			if sel.Matches(ctx.To) {
+				ctx.PolicyTrace("      Found all required labels")
+				if r.ToIdentities.ToPorts.IsWildcard() {
+					// FIXME this does not respect protocol yet.
 					ctx.PolicyTrace("+       No L4 restrictions\n")
 					state.matchedRules++
 					return v3.Allowed
 				}
+				ctx.PolicyTrace("        Rule restricts traffic from specific L4 destinations; deferring policy decision to L4 policy stage\n")
+			} else {
+				ctx.PolicyTrace("      Labels %v not found\n", ctx.To)
 			}
-			ctx.PolicyTrace("        Rule restricts traffic from specific L4 destinations; deferring policy decision to L4 policy stage\n")
-		} else {
-			ctx.PolicyTrace("      Labels %v not found\n", ctx.To)
 		}
-	}
-
-	for _, entitySelector := range r.toEntities {
-		if entitySelector.Matches(ctx.To) {
-			ctx.PolicyTrace("+     Found all required labels to match entity %s\n", entitySelector.String())
-			state.matchedRules++
-			return v3.Allowed
+		if r.ToEntities != nil {
+			for _, entity := range r.ToEntities.Entities {
+				sel, ok := v3.EntitySelectorMapping[entity]
+				if !ok {
+					log.Warningf("Ignoring entity %s while checking if rules can reach since it is unknown", entity)
+					continue
+				}
+				ctx.PolicyTrace("    Allows from labels %+v", sel)
+				if sel.Matches(ctx.To) {
+					ctx.PolicyTrace("      Found all required labels")
+					if r.ToEntities.ToPorts.IsWildcard() {
+						// FIXME this does not respect protocol yet.
+						ctx.PolicyTrace("+       No L4 restrictions\n")
+						state.matchedRules++
+						return v3.Allowed
+					}
+					ctx.PolicyTrace("        Rule restricts traffic to specific L4 destinations; deferring policy decision to L4 policy stage\n")
+				} else {
+					ctx.PolicyTrace("      Labels %v not found\n", ctx.From)
+				}
+			}
 		}
 	}
 
