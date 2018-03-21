@@ -12,12 +12,18 @@ BPF = bpf_lxc.o bpf_netdev.o bpf_overlay.o bpf_lb.o bpf_xdp.o
 SCRIPTS = init.sh join_ep.sh run_probes.sh spawn_netns.sh
 LIB := $(shell find ./ -name '*.h')
 
+TARGET=cilium-map-migrate
+
 CLANG ?= clang
 LLC   ?= llc
 
 ifeq ("$(PKG_BUILD)","")
 
-all: $(BPF)
+all: $(BPF) $(TARGET)
+
+$(TARGET): $(TARGET).c
+	@$(ECHO_CC)
+	$(QUIET) ${CLANG} -Wall -O2 -lelf -I include/ $@.c -o $@
 
 %.o: %.c $(LIB)
 	@$(ECHO_CC)
@@ -62,14 +68,17 @@ bpf_lxc.o: bpf_lxc.c $(LIB)
 	$(QUIET) ${CLANG} ${CLANG_FLAGS} -c $< -o $(patsubst %.o,%.ll,$@)
 	$(QUIET) ${LLC} ${LLC_FLAGS} -o $@ $(patsubst %.o,%.ll,$@)
 
+install:
+	$(INSTALL) -m 0755 $(TARGET) $(DESTDIR)$(BINDIR)
 else
 
 all:
 
-endif
-
 install:
+
+endif
 
 clean:
 	@$(ECHO_CLEAN) $(notdir $(shell pwd))
 	$(QUIET)rm -fr *.o
+	$(QUIET)rm -f $(TARGET)
