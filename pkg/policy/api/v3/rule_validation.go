@@ -33,7 +33,7 @@ type exists struct{}
 // capitalization of the protocol name are automatically fixed up. More
 // fundamental violations will cause an error to be returned.
 func (r Rule) Sanitize() error {
-	if r.EndpointSelector.LabelSelector == nil {
+	if r.IdentitySelector.LabelSelector == nil {
 		return fmt.Errorf("rule cannot have nil IdentitySelector")
 	}
 
