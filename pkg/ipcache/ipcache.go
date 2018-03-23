@@ -16,8 +16,10 @@ package ipcache
 
 import (
 	"encoding/json"
+	"net"
 	"path"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/cilium/cilium/pkg/envoy"
@@ -189,6 +191,21 @@ const (
 	Delete CacheModification = "Delete"
 )
 
+func keyToIP(key string) net.IP {
+	fullPath := path.Join(path.Join(IPIdentitiesPath, AddressSpace))
+	if !strings.HasPrefix(key, fullPath) {
+		log.WithFields(logrus.Fields{"key": key, "prefix": IPIdentitiesPath}).Warning("Found invalid key outside of prefix")
+		return nil
+	}
+
+	suffix := strings.TrimPrefix(key, fullPath)
+	if suffix[0] == '/' {
+		suffix = suffix[1:]
+	}
+
+	return net.ParseIP(suffix)
+}
+
 func ipIdentityWatcher(owner IPIdentityMappingOwner) {
 
 	for {
@@ -198,34 +215,36 @@ func ipIdentityWatcher(owner IPIdentityMappingOwner) {
 		// Get events from channel as they come in.
 		for event := range watcher.Events {
 
+			scopedLog := log.WithFields(logrus.Fields{"kvstore-event": event.Typ.String(), "key": event.Key})
+			scopedLog.Debug("received event")
+
 			var (
 				cacheChanged      bool
 				cacheModification CacheModification
 				ipIDPair          identity.IPIdentityPair
+				cachedIdentity    identity.NumericIdentity
 			)
 
-			// Key and value are empty for ListDone event types, so just continue.
-			// See GH-3159.
+			// Key and value are empty for ListDone event types; do not try
+			// to unmarshal key or value.
 			if event.Typ == kvstore.EventTypeListDone {
 				owner.OnIPIdentityCacheGC()
 				continue
 			}
 
-			err := json.Unmarshal(event.Value, &ipIDPair)
-			if err != nil {
-				log.WithFields(logrus.Fields{"key": event.Key, "value": event.Value}).WithError(err).Errorf("not adding entry to ip cache; error unmarshaling data from key-value store")
-				continue
-			}
-
-			// Synchronize local caching of endpoint IP to ipIDPair mapping with
-			// operation key-value store has informed us about.
-
-			ipStr := ipIDPair.IP.String()
-
-			cachedIdentity, exists := IPIdentityCache.LookupByIP(ipStr)
-
 			switch event.Typ {
 			case kvstore.EventTypeCreate, kvstore.EventTypeModify:
+
+				err := json.Unmarshal(event.Value, &ipIDPair)
+				if err != nil {
+					scopedLog.WithError(err).Errorf("not adding entry to ip cache; error unmarshaling data from key-value store")
+					continue
+				}
+
+				ipStr := ipIDPair.IP.String()
+
+				cachedIdentity, exists := IPIdentityCache.LookupByIP(ipStr)
+
 				if !exists || cachedIdentity != ipIDPair.ID {
 					IPIdentityCache.upsert(ipStr, ipIDPair.ID)
 					cacheChanged = true
@@ -242,16 +261,40 @@ func ipIdentityWatcher(owner IPIdentityMappingOwner) {
 					envoy.NetworkPolicyHostsCache.Upsert(envoy.NetworkPolicyHostsTypeURL, ipIDPair.ID.StringID(), &envoyAPI.NetworkPolicyHosts{Policy: uint64(ipIDPair.ID), HostAddresses: ipStrings}, false)
 				}
 			case kvstore.EventTypeDelete:
+				// Synchronize local caching of endpoint IP to ipIDPair mapping with
+				// operation key-value store has informed us about.
+
+				convertedKey := keyToIP(event.Key)
+
+				// Value is not present in deletion event; need to convert key
+				// to IP.
+				if convertedKey == nil {
+					scopedLog.Error("unable to convert key to IP")
+					continue
+				}
+
+				ipIDPair.IP = convertedKey
+				ipStr := convertedKey.String()
+
+				cachedIdentity, exists := IPIdentityCache.LookupByIP(ipStr)
+
 				if exists {
+
+					// Perform lookup first to get list of identities.
+					identityToDelete, exists := IPIdentityCache.LookupByIP(ipStr)
+					ipIDPair.ID = identityToDelete
+
+					endpointIPs, exists := IPIdentityCache.LookupByIdentity(identityToDelete)
+
 					IPIdentityCache.delete(ipStr)
 					cacheChanged = true
 					cacheModification = Delete
 
-					endpointIPs, exists := IPIdentityCache.LookupByIdentity(ipIDPair.ID)
 					if !exists {
 						// Delete from XDS Cache as well.
 						envoy.NetworkPolicyHostsCache.Delete(envoy.NetworkPolicyHostsTypeURL, cachedIdentity.StringID(), false)
 					} else {
+						// Update list in XDS cache without this ip.
 
 						// TODO (factor this out into a helper function).
 						ipStrings := make([]string, 0, len(endpointIPs))
@@ -259,7 +302,7 @@ func ipIdentityWatcher(owner IPIdentityMappingOwner) {
 							ipStrings = append(ipStrings, endpointIP)
 						}
 						sort.Strings(ipStrings)
-						envoy.NetworkPolicyHostsCache.Upsert(envoy.NetworkPolicyHostsTypeURL, ipIDPair.ID.StringID(), &envoyAPI.NetworkPolicyHosts{Policy: uint64(ipIDPair.ID), HostAddresses: ipStrings}, false)
+						envoy.NetworkPolicyHostsCache.Upsert(envoy.NetworkPolicyHostsTypeURL, identityToDelete.StringID(), &envoyAPI.NetworkPolicyHosts{Policy: uint64(identityToDelete), HostAddresses: ipStrings}, false)
 					}
 				}
 			}
