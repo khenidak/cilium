@@ -603,12 +603,12 @@ var _ = Describe("RuntimeValidatedPolicies", func() {
 		Expect(err).Should(BeNil())
 
 		for _, app := range []string{helpers.App1, helpers.App2} {
-			connectivityTest(pingRequests, app, helpers.Httpd1, false)
+			// connectivityTest(pingRequests, app, helpers.Httpd1, true)
 			connectivityTest(httpRequestsPublic, app, helpers.Httpd1, true)
-			connectivityTest(pingRequests, app, helpers.Httpd2, false)
+			// connectivityTest(pingRequests, app, helpers.Httpd2, true)
 			connectivityTest(httpRequestsPublic, app, helpers.Httpd2, true)
 		}
-		connectivityTest(allRequests, helpers.App3, helpers.Httpd1, false)
+		// connectivityTest(allRequests, helpers.App3, helpers.Httpd1, false)
 
 		By("Disabling all the policies. All should work")
 
